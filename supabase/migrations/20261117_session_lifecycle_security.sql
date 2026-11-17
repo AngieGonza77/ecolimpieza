@@ -51,7 +51,7 @@ create index profile_session_grants_session_idx
 alter table private.profile_session_grants enable row level security;
 
 revoke all on private.profile_session_grants from public, anon, authenticated, service_role;
-grant select on private.profile_session_grants to supabase_auth_admin;
+grant select, delete on private.profile_session_grants to supabase_auth_admin;
 grant usage on schema private to supabase_auth_admin;
 grant usage on schema public to supabase_auth_admin;
 grant usage on schema auth to supabase_auth_admin;
@@ -60,6 +60,11 @@ grant select on public.profiles to supabase_auth_admin;
 create policy profile_session_grants_auth_hook_select
   on private.profile_session_grants
   for select to supabase_auth_admin
+  using (true);
+
+create policy profile_session_grants_auth_hook_delete
+  on private.profile_session_grants
+  for delete to supabase_auth_admin
   using (true);
 
 create policy profiles_auth_hook_select
@@ -205,7 +210,8 @@ declare
   v_granted integer := 0;
   v_lock_user uuid;
 begin
-  if coalesce(auth.role(),'') <> 'authenticated'
+  if coalesce(auth.jwt()->>'role','') <> 'authenticated'
+     or coalesce((auth.jwt()->>'is_anonymous')::boolean,true)
      or v_actor is null
      or target is null
      or active is null then
