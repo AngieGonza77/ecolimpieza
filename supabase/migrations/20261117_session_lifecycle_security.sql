@@ -130,6 +130,12 @@ begin
     return event;
   end if;
 
+  -- Si la desactivación capturó una sesión cuyo login estaba en curso,
+  -- este rechazo elimina su concesión para que no pueda renovarse después.
+  delete from private.profile_session_grants
+  where user_id = v_user_id
+    and session_id = v_session_id;
+
   return jsonb_build_object(
     'error', jsonb_build_object(
       'http_code', 403,
@@ -195,7 +201,7 @@ declare
   v_actor_active boolean;
   v_target_role text;
   v_previous boolean;
-  v_now timestamptz := pg_catalog.clock_timestamp();
+  v_now timestamptz;
   v_granted integer := 0;
   v_lock_user uuid;
 begin
@@ -248,6 +254,9 @@ begin
   if v_previous is not distinct from active then
     return;
   end if;
+
+  -- El instante se fija después de obtener ambos bloqueos.
+  v_now := pg_catalog.clock_timestamp();
 
   if active = false then
     -- Captura las sesiones Auth que existen al momento de la desactivación.
