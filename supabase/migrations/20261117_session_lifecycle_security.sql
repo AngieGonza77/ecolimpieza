@@ -52,7 +52,7 @@ alter table private.profile_session_grants enable row level security;
 
 revoke all on private.profile_session_grants from public, anon, authenticated, service_role;
 grant select, delete on private.profile_session_grants to supabase_auth_admin;
-grant usage on schema private to supabase_auth_admin;
+grant usage on schema private to supabase_auth_admin, authenticated;
 grant usage on schema public to supabase_auth_admin;
 grant usage on schema auth to supabase_auth_admin;
 grant select on public.profiles to supabase_auth_admin;
@@ -158,7 +158,7 @@ grant execute on function public.eco_custom_access_token_hook(jsonb)
 
 -- Función usada por RLS: una cuenta activa accede normalmente; una inactiva
 -- solo conserva acceso con una sesión previamente concedida y aún existente en Auth.
-create function public.eco_session_allowed()
+create function private.eco_session_allowed()
 returns boolean
 language sql
 stable
@@ -185,10 +185,10 @@ as $f$
   )
 $f$;
 
-alter function public.eco_session_allowed() owner to postgres;
-revoke all on function public.eco_session_allowed()
+alter function private.eco_session_allowed() owner to postgres;
+revoke all on function private.eco_session_allowed()
   from public, anon, service_role;
-grant execute on function public.eco_session_allowed() to authenticated;
+grant execute on function private.eco_session_allowed() to authenticated;
 
 -- Reemplaza las RPC que recibían actor_id desde el servidor.
 -- La identidad de la jefa se obtiene exclusivamente del JWT autenticado.
@@ -336,7 +336,8 @@ declare
   v_clean_username text;
   v_lock_user uuid;
 begin
-  if coalesce(auth.role(),'') <> 'authenticated'
+  if coalesce(auth.jwt()->>'role','') <> 'authenticated'
+     or coalesce((auth.jwt()->>'is_anonymous')::boolean,true)
      or v_actor is null
      or target is null
      or full_name is null
@@ -419,14 +420,14 @@ drop policy profiles_select_self_or_jefa on public.profiles;
 create policy profiles_select_self_or_jefa
   on public.profiles
   for select to authenticated
-  using ((id=auth.uid() and public.eco_session_allowed())
+  using ((id=auth.uid() and private.eco_session_allowed())
          or public.eco_is_current_jefa());
 
 drop policy profiles_update_self_name on public.profiles;
 create policy profiles_update_self_name
   on public.profiles
   for update to authenticated
-  using (id=auth.uid() and public.eco_session_allowed())
-  with check (id=auth.uid() and public.eco_session_allowed());
+  using (id=auth.uid() and private.eco_session_allowed())
+  with check (id=auth.uid() and private.eco_session_allowed());
 
 commit;
